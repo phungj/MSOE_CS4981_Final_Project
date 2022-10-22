@@ -24,8 +24,42 @@
 // Scattering Anisotropy -1 <= g <= 1
 #define G 0.5
 
+// Index of refraction of medium
+#define N 1.5
+
+// Thickness of one bin layer
+#define MICRONS_PER_BIN 20
+
+// Number of NUMBER_OF_PHOTONS to simulate
+#define NUMBER_OF_PHOTONS 100000
+
+// Specular reflection
+#define RS ((N - 1.0) * (N - 1.0) / (N + 1.0) / (N + 1.0))
+
+// TODO: Figure out what this means
+#define ALBEDO (MU_S / (MU_S + MU_A))
+
+// Cosine of critical angle
+#define CRITICAL_ANGLE (sqrt(1.0 - 1.0 / N / N))
+
+// TODO: Figure out what this means
+#define BINS_PER_MFP (1e4 / MICRONS_PER_BIN / (MU_A + MU_S))
+
+// TODO: Figure out what this means
 #define BINS 101
 
+/**
+ * @struct Photon
+ * @brief This struct represents a photon to be simulated.
+ * @var Photon::xPosition The x-position of the photon, formerly x.
+ * @var Photon::yPosition The y-position of the photon, formerly y.
+ * @var Photon::zPosition The z-position of the photon, formerly z.
+ * @var Photon::deltaXPosition The change in the x-position of the photon, formerly u.
+ * @var Photon::deltaYPosition The change in the y-position of the photon, formerly v.
+ * @var Photon::deltaZPosition The change in the z-position of the photon, formerly w.
+ * @var Photon::weight The weight of the photon.
+ */
+ 
 typedef struct {
     double xPosition;
     double yPosition;
@@ -36,11 +70,21 @@ typedef struct {
     double weight;
 } Photon;
 
-// TODO: Doxygen
-void launch();
+/**
+ * @brief This function initializes the given Photon to the starting values.
+ * @param photon A pointer to the Photon to initialize.
+ */
+ 
+void initialize_photon(Photon* photon);
 
-// TODO: Doxygen
-void bounce();
+/**
+ * TODO: Figure out what this means
+ * @brief This function simulates the bouncing of a photon off the top surface.
+ * @param photon A pointer to the Photon to simulate.
+ * @param rd A statistic used in simulation
+ */
+ 
+void bounce(Photon* photon, int* rd)
 
 // TODO: Doxygen
 void move();
@@ -51,56 +95,89 @@ void absorb();
 // TODO: Doxygen
 void scatter();
 
-// TODO: Doxygen
-void print_results();
+/**
+ * TODO: Figure out what the params mean
+ * @brief This function will print the results and statistics of the Monte Carlo simulations.
+ * @param rd A statistic used to calculate the results
+ * @param bit A statistic used to calculate the results
+ * @param heat An array of statistics used to calculate the results
+ */
+ 
+void print_results(double rd, double bit, double heat[]);
 
 int main(void) {
-    double n = 1.5;				/* Index of refraction of medium */
-    double microns_per_bin = 20;/* Thickness of one bin layer */
-    long   i, photons = 100000;
-    double rs, rd, bit, albedo, crit_angle, bins_per_mfp, heat[BINS];
+	// TODO: figure out what these mean
+    double rd;
+	double bit;
+	double heat[BINS];
 
-	albedo = MU_S / (MU_S + MU_A);
-	rs = (n-1.0)*(n-1.0)/(n+1.0)/(n+1.0);	/* specular reflection */
-	crit_angle = sqrt(1.0-1.0/n/n);			/* cos of critical angle */
-	bins_per_mfp = 1e4 / microns_per_bin / (MU_A + MU_S);
+	Photon photon;
 	
-	for (i = 1; i <= photons; i++){
-		launch ();
-		while (weight > 0) {
-			move ();
-			absorb ();
-			scatter ();
+	for(int i = 1; i <= NUMBER_OF_PHOTONS; i++) {
+		// TODO: Check these default values, uninitialized in original code
+		rd = 0;
+		bit = 0;
+
+		initialize_photon(&photon);
+
+		while(photon.weight > 0) {
+			move();
+			absorb();
+			scatter();
 		}
 	}	
 
-	print_results();
+	print_results(rd, bit);
 
 	return 0;
 }
 
-// TODO: Doxygen
-void launch() /* Start the photon */
-{
-	x = 0.0; y = 0.0; z = 0.0;		  
-	u = 0.0; v = 0.0; w = 1.0;		
-	weight = 1.0 - rs;
+/**
+ * @brief This function initializes the given Photon to the starting values.
+ * @param photon A pointer to the Photon to initialize.
+ */
+
+void initialize_photon(Photon* photon) {
+	photon->xPosition = 0;
+	photon->yPosition = 0;
+	photon->zPosition = 0;
+	photon->deltaXPosition = 0;
+	photon->deltaYPosition = 0;
+	photon->deltaZPosition = 1.0;
+	photon->weight = 1 - RS;
 }
 
-// TODO: Doxygen
-void bounce () /* Interact with top surface */
-{
-double t, temp, temp1,rf;
-	w = -w;
-	z = -z;
-	if (w <= crit_angle) return;  			/* total internal reflection */	
+/**
+ * TODO: Figure out what this means
+ * @brief This function simulates the bouncing of a photon off the top surface.
+ * @param photon A pointer to the Photon to simulate.
+ * @param rd A statistic used in simulation
+ */
 
-	t       = sqrt(1.0-n*n*(1.0-w*w));    	/* cos of exit angle */
-	temp1   = (w - n*t)/(w + n*t);
-	temp    = (t - n*w)/(t + n*w);
-	rf      = (temp1*temp1+temp*temp)/2.0;	/* Fresnel reflection */
-	rd     += (1.0-rf) * weight;
-	weight -= (1.0-rf) * weight;
+void bounce(Photon* photon, int* rd) {
+	// TODO: Figure out what these mean
+	const double t; 
+	const double temp;
+	const double temp1;
+	const double rf;
+
+	photon->deltaZPosition = -photon->deltaZPosition;
+	photon->zPosition = -photon->zPosition;
+
+	// TODO: Figure out what this means
+	// This conditional checks the total internal reflection of the photon
+	if(w > CRITICAL_ANGLE) {
+		// Cosine of exit angle
+		t = sqrt(1.0 - N * N * (1.0 - photon->deltaZPosition * photon->deltaZPosition));
+
+		temp = (t - N * w) / (t + N * w);
+		temp1 = (photon->deltaZPosition - N * t) / ((photon->deltaZPosition + N * t));
+
+		// Fresnel reflection
+		rf = (temp1 * temp1 + temp * temp) / 2.0;
+		*rd += (1.0 - rf) * weight;
+		photon->weight -= (1.0 - rf) * weight;
+	}		
 }
 
 // TODO: Doxygen
@@ -116,11 +193,11 @@ double d = -log((rand()+1.0)/(RAND_MAX+1.0));
 // TODO: Doxygen
 void absorb () /* Absorb light in the medium */
 {
-int bin=z*bins_per_mfp;
+int bin=z*BINS_PER_MFP;
 
 	if (bin >= BINS) bin = BINS-1;	
-	heat[bin] += (1.0-albedo)*weight;
-	weight *= albedo;
+	heat[bin] += (1.0-ALBEDO)*weight;
+	weight *= ALBEDO;
 	if (weight < 0.001){ /* Roulette */
 		bit -= weight;
 		if (rand() > 0.1*RAND_MAX) weight = 0; else weight /= 0.1;
@@ -160,28 +237,33 @@ double x1, x2, x3, t, mu;
 }
 
 /**
- * 
+ * TODO: Figure out what the params mean
+ * @brief This function will print the results and statistics of the Monte Carlo simulations.
+ * @param rd A statistic used to calculate the results
+ * @param bit A statistic used to calculate the results
+ * @param heat An array of statistics used to calculate the results
  */
-void print_results() {
+
+void print_results(double rd, double bit, double heat[]) {
     printf("Small Monte Carlo by Scott Prahl (https://omlc.org)\n");
     printf("1 W/cm^2 Uniform Illumination of Semi-Infinite Medium\n\n");
 
     printf("Scattering = %8.3f/cm\n", MU_S);
     printf("Absorption = %8.3f/cm\n", MU_A);
     printf("Anisotropy = %8.3f\n", G);
-    printf("Refraction Index = %8.3f\n", n);
-    printf("Number of Photons = %8ld\n\n", photons);
+    printf("Refraction Index = %8.3f\n", N);
+    printf("Number of Photons = %8ld\n\n", NUMBER_OF_PHOTONS);
 
-    printf("Specular Reflection = %10.5f\n", rs);
-    printf("Backscattered Reflection = %10.5f\n\n", rd / (bit + photons));
+    printf("Specular Reflection = %10.5f\n", RS);
+    printf("Backscattered Reflection = %10.5f\n\n", rd / (bit + NUMBER_OF_PHOTONS));
 
 	printf("Depth         Heat\n[microns]     [W/cm^3]\n");
 
 	for (int i = 0; i < BINS - 1; i++) {
 		printf("%6.0f    %12.5f\n", 
-            i * microns_per_bin, 
-            heat[i] / microns_per_bin * 1e4 / (bit + photons));
+            i * MICRONS_PER_BIN, 
+            heat[i] / MICRONS_PER_BIN * 1e4 / (bit + NUMBER_OF_PHOTONS));
 	}
 
-	printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / (bit + photons));
+	printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / (bit + NUMBER_OF_PHOTONS));
 }
