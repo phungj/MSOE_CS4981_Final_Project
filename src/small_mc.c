@@ -16,10 +16,10 @@
 #include <math.h>
 
 // Absorption Coefficient in 1/cm
-#define MU_A 5
+#define MU_A 5.0
 
 // Scattering Coefficient in 1/cm
-#define MU_S 95
+#define MU_S 95.0
 
 // Scattering Anisotropy -1 <= g <= 1
 #define G 0.5
@@ -28,10 +28,10 @@
 #define N 1.5
 
 // Thickness of one bin layer
-#define MICRONS_PER_BIN 20
+#define MICRONS_PER_BIN 20.0
 
 // Number of NUMBER_OF_PHOTONS to simulate
-#define NUMBER_OF_PHOTONS 100000
+#define NUMBER_OF_PHOTONS 100000l
 
 // Specular reflection
 #define RS ((N - 1.0) * (N - 1.0) / (N + 1.0) / (N + 1.0))
@@ -75,7 +75,7 @@ typedef struct {
  * @param photon A pointer to the Photon to initialize.
  */
  
-void initialize_photon(Photon* photon);
+void initialize_photon(Photon *photon);
 
 /**
  * TODO: Figure out what this means
@@ -84,16 +84,30 @@ void initialize_photon(Photon* photon);
  * @param rd A statistic used in simulation
  */
  
-void bounce(Photon* photon, int* rd)
+void bounce(Photon* photon, double* rd);
 
 // TODO: Doxygen
-void move();
+/**
+ * TODO: Figure out what this means
+ * @brief This function simulates the bouncing of a photon off the top surface.
+ * @param photon A pointer to the Photon to simulate.
+ * @param rd A statistic used in simulation
+ */
+void move(Photon* photon, double* rd);
 
-// TODO: Doxygen
-void absorb();
+/**
+ * TODO: Figure out what this means
+ * @brief This function simulates the bouncing of a photon off the top surface.
+ * @param photon A pointer to the Photon to simulate.
+ * @param rd A statistic used in simulation
+ */
+void absorb(Photon* photon, double bit, double heat[]);
 
-// TODO: Doxygen
-void scatter();
+/**
+ * @brief This function initializes the given Photon to the starting values.
+ * @param photon A pointer to the Photon to initialize.
+ */
+void scatter(Photon* photon);
 
 /**
  * TODO: Figure out what the params mean
@@ -103,33 +117,33 @@ void scatter();
  * @param heat An array of statistics used to calculate the results
  */
  
-void print_results(double rd, double bit, double heat[]);
+void print_results(double* rd, double bit, double heat[]);
 
 int main(void) {
-	// TODO: figure out what these mean
+    // TODO: figure out what these mean
     double rd;
-	double bit;
-	double heat[BINS];
+    double bit;
+    double heat[BINS];
 
-	Photon photon;
+    Photon photon;
 	
-	for(int i = 1; i <= NUMBER_OF_PHOTONS; i++) {
-		// TODO: Check these default values, uninitialized in original code
-		rd = 0;
-		bit = 0;
+    for(int i = 1; i <= NUMBER_OF_PHOTONS; i++) {
+        // TODO: Check these default values, uninitialized in original code
+      	rd = 0;
+        bit = 0;
 
-		initialize_photon(&photon);
+      	initialize_photon(&photon);
 
-		while(photon.weight > 0) {
-			move();
-			absorb();
-			scatter();
-		}
-	}	
+        while(photon.weight > 0) {
+            move(&photon, &rd);
+            absorb(&photon, bit, heat);
+            scatter(&photon);
+	}
+    }	
 
-	print_results(rd, bit);
+    print_results(&rd, bit, heat);
 
-	return 0;
+    return 0;
 }
 
 /**
@@ -137,14 +151,14 @@ int main(void) {
  * @param photon A pointer to the Photon to initialize.
  */
 
-void initialize_photon(Photon* photon) {
-	photon->xPosition = 0;
-	photon->yPosition = 0;
-	photon->zPosition = 0;
-	photon->deltaXPosition = 0;
-	photon->deltaYPosition = 0;
-	photon->deltaZPosition = 1.0;
-	photon->weight = 1 - RS;
+void initialize_photon(Photon *photon) {
+    photon->xPosition = 0;
+    photon->yPosition = 0;
+    photon->zPosition = 0;
+    photon->deltaXPosition = 0;
+    photon->deltaYPosition = 0;
+    photon->deltaZPosition = 1.0;
+    photon->weight = 1 - RS;
 }
 
 /**
@@ -154,86 +168,112 @@ void initialize_photon(Photon* photon) {
  * @param rd A statistic used in simulation
  */
 
-void bounce(Photon* photon, int* rd) {
-	// TODO: Figure out what these mean
-	const double t; 
-	const double temp;
-	const double temp1;
-	const double rf;
+void bounce(Photon* photon, double* rd) {
+    // TODO: Figure out what these mean
+    double t; 
+    double temp;
+    double temp1;
+    double rf;
 
-	photon->deltaZPosition = -photon->deltaZPosition;
-	photon->zPosition = -photon->zPosition;
+    photon->deltaZPosition = - photon->deltaZPosition;
+    photon->zPosition = - photon->zPosition;
 
-	// TODO: Figure out what this means
-	// This conditional checks the total internal reflection of the photon
-	if(w > CRITICAL_ANGLE) {
-		// Cosine of exit angle
-		t = sqrt(1.0 - N * N * (1.0 - photon->deltaZPosition * photon->deltaZPosition));
+    // TODO: Figure out what this means
+    // This conditional checks the total internal reflection of the photon
+    if(photon->deltaZPosition > CRITICAL_ANGLE) {
+        // Cosine of exit angle
+	t = sqrt(1.0 - N * N * (1.0 - photon->deltaZPosition * photon->deltaZPosition));
 
-		temp = (t - N * w) / (t + N * w);
-		temp1 = (photon->deltaZPosition - N * t) / ((photon->deltaZPosition + N * t));
+      	temp = (t - N * photon->deltaZPosition) / (t + N * photon->deltaZPosition);
+        temp1 = (photon->deltaZPosition - N * t) / ((photon->deltaZPosition + N * t));
 
-		// Fresnel reflection
-		rf = (temp1 * temp1 + temp * temp) / 2.0;
-		*rd += (1.0 - rf) * weight;
-		photon->weight -= (1.0 - rf) * weight;
-	}		
+	// Fresnel reflection
+      	rf = (temp1 * temp1 + temp * temp) / 2.0;
+	(*rd) += (1.0 - rf) * photon->weight;
+	photon->weight -= (1.0 - rf) * photon->weight;
+    }		
 }
 
 // TODO: Doxygen
-void move() /* move to next scattering or absorption event */
-{
-double d = -log((rand()+1.0)/(RAND_MAX+1.0));
-	x += d * u;
-	y += d * v;
-	z += d * w;  
-	if ( z<=0 ) bounce();
+/* move to next scattering or absorption event */
+/**
+ * TODO: Figure out what this means
+ * @brief This function simulates the bouncing of a photon off the top surface.
+ * @param photon A pointer to the Photon to simulate.
+ * @param rd A statistic used in simulation
+ */
+
+void move(Photon* photon, double* rd) {
+    double d = -log((rand()+1.0)/(RAND_MAX+1.0));
+
+    photon->xPosition += d * photon->deltaXPosition;
+    photon->yPosition += d * photon->deltaYPosition;
+    photon->zPosition += d * photon->deltaZPosition;  
+    if ( photon->zPosition<=0 ) bounce(photon, rd);
 }
 
 // TODO: Doxygen
-void absorb () /* Absorb light in the medium */
-{
-int bin=z*BINS_PER_MFP;
+// Absorb light in the medium
+void absorb (Photon* photon, double bit, double heat[]) {
+    int bin=photon->zPosition * BINS_PER_MFP;
 
-	if (bin >= BINS) bin = BINS-1;	
-	heat[bin] += (1.0-ALBEDO)*weight;
-	weight *= ALBEDO;
-	if (weight < 0.001){ /* Roulette */
-		bit -= weight;
-		if (rand() > 0.1*RAND_MAX) weight = 0; else weight /= 0.1;
-		bit += weight;
-	}
+    if (bin >= BINS) bin = BINS-1;	
+    heat[bin] += (1.0-ALBEDO) * photon->weight;
+    photon->weight *= ALBEDO;
+    if (photon->weight < 0.001){ /* Roulette */
+        bit -= photon->weight;
+        if (rand() > 0.1 * RAND_MAX) photon->weight = 0; else photon->weight /= 0.1;
+        bit += photon->weight;
+    }
 }
 
 // TODO: Doxygen
-void scatter() /* Scatter photon and establish new direction */
-{
-double x1, x2, x3, t, mu;
+// Scatter photon and establish new direction
+void scatter(Photon* photon) {
+    double x1, x2, x3, t, mu;
 
-	for(;;) {								/*new direction*/
-		x1=2.0*rand()/RAND_MAX - 1.0; 
-		x2=2.0*rand()/RAND_MAX - 1.0; 
-		if ((x3=x1*x1+x2*x2)<=1) break;
-	}	
-	if (G==0) {  /* isotropic */
-		u = 2.0 * x3 -1.0;
-		v = x1 * sqrt((1-u*u)/x3);
-		w = x2 * sqrt((1-u*u)/x3);
-		return;
-	} 
+    for(;;) {								/*new direction*/
+        x1 = 2.0 * rand() / RAND_MAX - 1.0; 
+      	x2 = 2.0 * rand()/ RAND_MAX - 1.0; 
+	if ((x3 = x1 * x1 + x2 * x2) <= 1) break;
+    }	
+    if (G==0) {  /* isotropic */
+        photon->deltaXPosition = 2.0 * x3 -1.0;
+	photon->deltaYPosition = x1 * sqrt((1-photon->deltaXPosition * photon->deltaXPosition) /x3);
+	photon->deltaZPosition = x2 * sqrt((1-photon->deltaXPosition * photon->deltaXPosition) /x3);
+	return;
+    } 
 
-	mu = (1-G*G)/(1-G+2.0*G*rand()/RAND_MAX);
-	mu = (1 + G*G-mu*mu)/2.0/G;
-	if ( fabs(w) < 0.9 ) {	
-		t = mu * u + sqrt((1-mu*mu)/(1-w*w)/x3) * (x1*u*w-x2*v);
-		v = mu * v + sqrt((1-mu*mu)/(1-w*w)/x3) * (x1*v*w+x2*u);
-		w = mu * w - sqrt((1-mu*mu)*(1-w*w)/x3) * x1;
-	} else {
-		t = mu * u + sqrt((1-mu*mu)/(1-v*v)/x3) * (x1*u*v + x2*w);
-		w = mu * w + sqrt((1-mu*mu)/(1-v*v)/x3) * (x1*v*w - x2*u);
-		v = mu * v - sqrt((1-mu*mu)*(1-v*v)/x3) * x1;
-	}
-	u = t;
+    mu = (1 - G * G) / (1 - G + 2.0 * G * rand() / RAND_MAX);
+    mu = (1 + G * G - mu * mu) / 2.0 / G;
+    if ( fabs(photon->deltaZPosition) < 0.9 ) {	
+        t = mu * photon->deltaXPosition + sqrt((1 - mu * mu) / (1 - photon->deltaZPosition *
+              photon->deltaZPosition) / x3) * (x1 * photon->deltaXPosition * photon->deltaZPosition
+              - x2 * photon->deltaYPosition);
+
+      	photon->deltaYPosition = mu * photon->deltaYPosition + sqrt((1 - mu * mu) / (1 - 
+              photon->deltaZPosition * photon->deltaZPosition) / x3) * (x1 * 
+              photon->deltaYPosition * photon->deltaZPosition + x2 *
+              photon->deltaXPosition);
+	      
+        photon->deltaZPosition = mu * photon->deltaZPosition - sqrt((1 - mu * mu) * (1 - 
+              photon->deltaZPosition * photon->deltaZPosition) / x3) * x1;
+
+    } else {
+        t = mu * photon->deltaXPosition + sqrt((1 - mu * mu) / (1 - photon->deltaYPosition * 
+              photon->deltaYPosition) / x3) * (x1 * photon->deltaXPosition * photon->deltaYPosition
+              + x2 * photon->deltaZPosition);
+
+      	photon->deltaZPosition = mu * photon->deltaZPosition + sqrt((1 - mu * mu) / (1 - 
+              photon->deltaYPosition) / x3) * (x1 * photon->deltaYPosition * 
+              photon->deltaZPosition - x2 * photon->deltaXPosition);
+
+        photon->deltaYPosition = mu * photon->deltaYPosition - sqrt((1 - mu * mu) * (1 - 
+              photon->deltaYPosition * photon->deltaYPosition) / x3) * x1;
+
+    }
+
+    photon->deltaXPosition = t;
 }
 
 /**
@@ -244,7 +284,7 @@ double x1, x2, x3, t, mu;
  * @param heat An array of statistics used to calculate the results
  */
 
-void print_results(double rd, double bit, double heat[]) {
+void print_results(double* rd, double bit, double heat[]) {
     printf("Small Monte Carlo by Scott Prahl (https://omlc.org)\n");
     printf("1 W/cm^2 Uniform Illumination of Semi-Infinite Medium\n\n");
 
@@ -255,15 +295,14 @@ void print_results(double rd, double bit, double heat[]) {
     printf("Number of Photons = %8ld\n\n", NUMBER_OF_PHOTONS);
 
     printf("Specular Reflection = %10.5f\n", RS);
-    printf("Backscattered Reflection = %10.5f\n\n", rd / (bit + NUMBER_OF_PHOTONS));
+    printf("Backscattered Reflection = %10.5f\n\n", (*rd) / (bit + NUMBER_OF_PHOTONS));
 
-	printf("Depth         Heat\n[microns]     [W/cm^3]\n");
+    printf("Depth         Heat\n[microns]     [W/cm^3]\n");
 
-	for (int i = 0; i < BINS - 1; i++) {
-		printf("%6.0f    %12.5f\n", 
-            i * MICRONS_PER_BIN, 
-            heat[i] / MICRONS_PER_BIN * 1e4 / (bit + NUMBER_OF_PHOTONS));
-	}
+    for (int i = 0; i < BINS - 1; i++) {
+	printf("%6.0f    %12.5f\n", i * MICRONS_PER_BIN, heat[i] / MICRONS_PER_BIN * 1e4 / (bit + 
+              NUMBER_OF_PHOTONS));
+    }
 
-	printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / (bit + NUMBER_OF_PHOTONS));
+    printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / (bit + NUMBER_OF_PHOTONS));
 }
