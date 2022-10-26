@@ -81,7 +81,7 @@ typedef struct {
  * @return The elapsed, wall-clock time between the given end and start timespecs in milliseconds.
  */
 
-float host_time(timespec* start, timespec* end);
+float host_time(struct timespec* start, struct timespec* end);
 
 /**
  * @brief This function initializes the given Photon to the starting values.
@@ -128,19 +128,6 @@ void scatter(Photon* photon);
  */
 void print_results(double* rd, double* bit, double heat[], long totalPhotons);
 
-/**
- * @brief This function measures the elapsed, wall-clock time on the host given two timespecs in
- * milliseconds and returns it.  This was given as a part of the lab and has been cleaned for
- * consistency.
- * @param start A pointer to the timespec representing the start of timing.
- * @param end A pointer to the timespec representing the end of timing.
- * @return The elapsed, wall-clock time between the given end and start timespecs in milliseconds.
- */
-
-float host_time(timespec* start, timespec* end) {
-    return ((1e9 * end->tv_sec + end->tv_nsec) - (1e9 * start->tv_sec + start->tv_nsec)) / 1e6;
-}
-
 int main(int argc, char* argv[]) {
     // TODO: figure out what these mean
     double rd = 0.0;
@@ -150,8 +137,8 @@ int main(int argc, char* argv[]) {
 
     Photon photon;
 
-    timespec ts;
-    timespec te;
+    struct timespec ts;
+    struct timespec te;
 
     errno = 0; //define C error variable
     char *p; //create pointers for host device
@@ -196,7 +183,7 @@ int main(int argc, char* argv[]) {
  * @return The elapsed, wall-clock time between the given end and start timespecs in milliseconds.
  */
 
-float host_time(timespec* start, timespec* end) {
+float host_time(struct timespec* start, struct timespec* end) {
     return ((1e9 * end->tv_sec + end->tv_nsec) - (1e9 * start->tv_sec + start->tv_nsec)) / 1e6;
 }
 
