@@ -310,7 +310,6 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
     printf("Depth         Heat\n[microns]     [W/cm^3]\n");
 
     for (int i = 0; i < BINS - 1; i++) {
-//        printf("\n%f\n", heat[i]);
 	printf("%6.0f    %12.5f\n", i * MICRONS_PER_BIN, heat[i] / MICRONS_PER_BIN * 1e4 / ((*bit) +
               totalPhotons));
     }
