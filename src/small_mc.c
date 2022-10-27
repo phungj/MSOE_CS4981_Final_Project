@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <errno.h>
+#include <time.h>
 
 // Absorption Coefficient in 1/cm
 #define MU_A 5.0
@@ -72,6 +73,17 @@ typedef struct {
 } Photon;
 
 /**
+ * @brief This function measures the elapsed, wall-clock time on the host given two timespecs in
+ * milliseconds and returns it.  This was given as a part of Lab 1 and has been cleaned for
+ * consistency.
+ * @param start A pointer to the timespec representing the start of timing.
+ * @param end A pointer to the timespec representing the end of timing.
+ * @return The elapsed, wall-clock time between the given end and start timespecs in milliseconds.
+ */
+
+float host_time(struct timespec* start, struct timespec* end);
+
+/**
  * @brief This function initializes the given Photon to the starting values.
  * @param photon A pointer to the Photon to initialize.
  */
@@ -120,10 +132,13 @@ int main(int argc, char* argv[]) {
     // TODO: figure out what these mean
     double rd = 0.0;
     double bit = 0.0;
-    double heat[BINS];
+    double heat[BINS] = {0};
     long totalPhotons;
 
     Photon photon;
+
+    struct timespec ts;
+    struct timespec te;
 
     errno = 0; //define C error variable
     char *p; //create pointers for host device
@@ -138,6 +153,7 @@ int main(int argc, char* argv[]) {
         totalPhotons = NUMBER_OF_PHOTONS;
     }
 	
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     for(int i = 1; i <= totalPhotons; i++) {
         // TODO: Check these default values, uninitialized in original code
 
@@ -147,12 +163,28 @@ int main(int argc, char* argv[]) {
             move(&photon, &rd);
             absorb(&photon, &bit, heat);
             scatter(&photon);
-	}
-    }	
+	    }
+    }
+    clock_gettime(CLOCK_MONOTONIC_RAW, &te);
+
+    printf("Host Photon Simulation Runtime (ms): %f\n\n", host_time(&ts, &te));	
 
     print_results(&rd, &bit, heat, totalPhotons);
 
     return 0;
+}
+
+/**
+ * @brief This function measures the elapsed, wall-clock time on the host given two timespecs in
+ * milliseconds and returns it.  This was given as a part of the lab and has been cleaned for
+ * consistency.
+ * @param start A pointer to the timespec representing the start of timing.
+ * @param end A pointer to the timespec representing the end of timing.
+ * @return The elapsed, wall-clock time between the given end and start timespecs in milliseconds.
+ */
+
+float host_time(struct timespec* start, struct timespec* end) {
+    return ((1e9 * end->tv_sec + end->tv_nsec) - (1e9 * start->tv_sec + start->tv_nsec)) / 1e6;
 }
 
 /**
