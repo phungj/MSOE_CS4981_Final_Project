@@ -129,7 +129,6 @@ void scatter(Photon* photon);
 void print_results(double* rd, double* bit, double heat[], long totalPhotons);
 
 int main(int argc, char* argv[]) {
-    // TODO: figure out what these mean
     double rd = 0.0;
     double bit = 0.0;
     double heat[BINS] = {0};
@@ -140,13 +139,15 @@ int main(int argc, char* argv[]) {
     struct timespec ts;
     struct timespec te;
 
-    errno = 0; //define C error variable
-    char *p; //create pointers for host device
+    errno = 0;
+    char *p;
 
     if (argc > 1) {
-        totalPhotons = strtol(argv[1], &p, 10); //convert char array to integer
-        if (errno != 0 || *p != '\0') {   //check for errors before running the simulation
+        totalPhotons = strtol(argv[1], &p, 10);
+
+        if (errno != 0 || *p != '\0') {
             fprintf( stderr, "Invalid number of photons");
+
             return 1;
         }
     } else {
@@ -154,9 +155,8 @@ int main(int argc, char* argv[]) {
     }
 	
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    // This for loop runs totalPhotons Monte Carlo simulations, one for each photon 
     for(int i = 1; i <= totalPhotons; i++) {
-        // TODO: Check these default values, uninitialized in original code
-
       	initialize_photon(&photon);
 
         while(photon.weight > 0) {
@@ -209,16 +209,14 @@ void initialize_photon(Photon *photon) {
  */
 
 void bounce(Photon* photon, double* rd) {
-    // TODO: Figure out what these mean
     double t; 
     double temp;
     double temp1;
     double rf;
 
-    photon->deltaZPosition = - photon->deltaZPosition;
-    photon->zPosition = - photon->zPosition;
+    photon->deltaZPosition = -photon->deltaZPosition;
+    photon->zPosition = -photon->zPosition;
 
-    // TODO: Figure out what this means
     // This conditional checks the total internal reflection of the photon
     if(photon->deltaZPosition > CRITICAL_ANGLE) {
         // Cosine of exit angle
@@ -228,7 +226,7 @@ void bounce(Photon* photon, double* rd) {
         temp1 = (photon->deltaZPosition - N * t) / ((photon->deltaZPosition + N * t));
 
 	// Fresnel reflection
-      	rf = (temp1 * temp1 + temp * temp) / 2.0;
+    rf = (temp1 * temp1 + temp * temp) / 2.0;
 	(*rd) += (1.0 - rf) * photon->weight;
 	photon->weight -= (1.0 - rf) * photon->weight;
     }		
@@ -239,13 +237,22 @@ void bounce(Photon* photon, double* rd) {
  * @param photon A pointer to the Photon to simulate.
  * @param rd A statistic used in simulation
  */
+
 void move(Photon* photon, double* rd) {
-    double d = -log((rand()+1.0)/(RAND_MAX+1.0));
+    double d = -log((rand() + 1.0) / (RAND_MAX + 1.0));
 
     photon->xPosition += d * photon->deltaXPosition;
     photon->yPosition += d * photon->deltaYPosition;
     photon->zPosition += d * photon->deltaZPosition;  
-    if ( photon->zPosition<=0 ) bounce(photon, rd);
+
+    /*
+     * This photon checks if the photon's z position is less than or equal to 0 and bounces the 
+     * photon if it is.
+     */ 
+
+    if(photon->zPosition <= 0) {
+        bounce(photon, rd);
+    }
 }
 
 /**
@@ -254,15 +261,27 @@ void move(Photon* photon, double* rd) {
  * @param bit A statistic used to calculate the results
  * @param heat An array of statistics used to calculate the results
  */
-void absorb (Photon* photon, double* bit, double heat[]) {
-    int bin=photon->zPosition * BINS_PER_MFP;
 
-    if (bin >= BINS) bin = BINS-1;	
-    heat[bin] += (1.0-ALBEDO) * photon->weight;
+void absorb (Photon* photon, double* bit, double heat[]) {
+    int bin = photon->zPosition * BINS_PER_MFP;
+
+    if(bin >= BINS) {
+        bin = BINS-1;	
+    }
+
+    heat[bin] += (1.0 - ALBEDO) * photon->weight;
     photon->weight *= ALBEDO;
-    if (photon->weight < 0.001){ /* Roulette */
+
+    // These nested if statement handles the roulette for photons with weights less than 0.001
+    if(photon->weight < 0.001) { 
         (*bit) -= photon->weight;
-        if (rand() > 0.1 * RAND_MAX) photon->weight = 0; else photon->weight /= 0.1;
+
+        if(rand() > 0.1 * RAND_MAX) {
+            photon->weight = 0;
+        } else {
+            photon->weight /= 0.1;
+        }
+
         (*bit) += photon->weight;
     }
 }
@@ -271,51 +290,75 @@ void absorb (Photon* photon, double* bit, double heat[]) {
  * @brief This function simulates the scattering of a photon and establish a new direction
  * @param photon A pointer to the Photon to initialize.
  */
+
 void scatter(Photon* photon) {
-    double x1, x2, x3, t, mu;
+    double x1;
+    double x2;
+    double x3;
+    double t;
+    double mu;
 
-    for(;;) {								/*new direction*/
+    x1 = 2.0 * rand() / RAND_MAX - 1.0; 
+    x2 = 2.0 * rand()/ RAND_MAX - 1.0;
+    x3 = x3 = x1 * x1 + x2 * x2;
+
+    // This while loop randomly chooses a new direction for the photon
+    while(x3 <= 1) {
         x1 = 2.0 * rand() / RAND_MAX - 1.0; 
-      	x2 = 2.0 * rand()/ RAND_MAX - 1.0; 
-	if ((x3 = x1 * x1 + x2 * x2) <= 1) break;               /*breaks when x1^2 * x2^2 is <= 1*/
-    }	
-    if (G==0) {  /* isotropic */
-        photon->deltaXPosition = 2.0 * x3 -1.0;
-	photon->deltaYPosition = x1 * sqrt((1-photon->deltaXPosition * photon->deltaXPosition) /x3);
-	photon->deltaZPosition = x2 * sqrt((1-photon->deltaXPosition * photon->deltaXPosition) /x3);
-	return;
-    } 
-
-    mu = (1 - G * G) / (1 - G + 2.0 * G * rand() / RAND_MAX);
-    mu = (1 + G * G - mu * mu) / 2.0 / G;
-    if ( fabs(photon->deltaZPosition) < 0.9 ) {	
-        t = mu * photon->deltaXPosition + sqrt((1 - mu * mu) / (1 - photon->deltaZPosition *
-              photon->deltaZPosition) / x3) * (x1 * photon->deltaXPosition * photon->deltaZPosition
-              - x2 * photon->deltaYPosition);
-
-      	photon->deltaYPosition = mu * photon->deltaYPosition + sqrt((1 - mu * mu) / (1 - 
-              photon->deltaZPosition * photon->deltaZPosition) / x3) * (x1 * 
-              photon->deltaYPosition * photon->deltaZPosition + x2 *
-              photon->deltaXPosition);
-	      
-        photon->deltaZPosition = mu * photon->deltaZPosition - sqrt((1 - mu * mu) * (1 - 
-              photon->deltaZPosition * photon->deltaZPosition) / x3) * x1;
-
-    } else {
-        t = mu * photon->deltaXPosition + sqrt((1 - mu * mu) / (1 - photon->deltaYPosition * 
-              photon->deltaYPosition) / x3) * (x1 * photon->deltaXPosition * photon->deltaYPosition
-              + x2 * photon->deltaZPosition);
-
-      	photon->deltaZPosition = mu * photon->deltaZPosition + sqrt((1 - mu * mu) / (1 - 
-              photon->deltaYPosition) / x3) * (x1 * photon->deltaYPosition * 
-              photon->deltaZPosition - x2 * photon->deltaXPosition);
-
-        photon->deltaYPosition = mu * photon->deltaYPosition - sqrt((1 - mu * mu) * (1 - 
-              photon->deltaYPosition * photon->deltaYPosition) / x3) * x1;
-
+        x2 = 2.0 * rand()/ RAND_MAX - 1.0;
+        x3 = x3 = x1 * x1 + x2 * x2;
     }
 
-    photon->deltaXPosition = t;
+    // This if statement handles the case where g == 0, also known as the isotropic case
+    if(G == 0) {
+        photon->deltaXPosition = 2.0 * x3 - 1.0;
+	    photon->deltaYPosition = 
+            x1 * sqrt((1 - photon->deltaXPosition * photon->deltaXPosition) / x3);
+	    photon->deltaZPosition = 
+        x2 * sqrt((1 - photon->deltaXPosition * photon->deltaXPosition)  /x3);
+    } else {
+        mu = (1 - G * G) / (1 - G + 2.0 * G * rand() / RAND_MAX);
+        mu = (1 + G * G - mu * mu) / 2.0 / G;
+
+        // This if statement checks if the speed of the photon in the z-direction is less than 0.9
+        if(fabs(photon->deltaZPosition) < 0.9) {	
+            t = mu * 
+                photon->deltaXPosition + 
+                sqrt((1 - mu * mu) / 
+                (1 - photon->deltaZPosition * photon->deltaZPosition) / x3) * 
+                (x1 * photon->deltaXPosition * photon->deltaZPosition - x2 * photon->deltaYPosition);
+
+      	    photon->deltaYPosition = mu * 
+                                     photon->deltaYPosition + 
+                                     sqrt((1 - mu * mu) / (1 - photon->deltaZPosition * photon->deltaZPosition) / x3) * 
+                                     (x1 * photon->deltaYPosition * photon->deltaZPosition + x2 *photon->deltaXPosition);
+	      
+            photon->deltaZPosition = mu * 
+                                     photon->deltaZPosition - 
+                                     sqrt((1 - mu * mu) * 
+                                     (1 - photon->deltaZPosition * photon->deltaZPosition) / x3) * 
+                                     x1;
+
+        } else {
+            t = mu * 
+                photon->deltaXPosition + 
+                sqrt((1 - mu * mu) / (1 - photon->deltaYPosition * photon->deltaYPosition) / x3) * 
+                (x1 * photon->deltaXPosition * photon->deltaYPosition + x2 * photon->deltaZPosition);
+
+      	    photon->deltaZPosition = mu * 
+                                     photon->deltaZPosition + 
+                                     sqrt((1 - mu * mu) / (1 - photon->deltaYPosition) / x3) * 
+                                     (x1 * photon->deltaYPosition * photon->deltaZPosition - x2 * photon->deltaXPosition);
+
+            photon->deltaYPosition = mu * 
+                                     photon->deltaYPosition - 
+                                     sqrt((1 - mu * mu) * (1 - photon->deltaYPosition * photon->deltaYPosition) / x3) * 
+                                     x1;
+
+        }
+
+        photon->deltaXPosition = t;
+    }
 }
 
 /**
@@ -325,6 +368,7 @@ void scatter(Photon* photon) {
  * @param heat An array of statistics used to calculate the results
  * @param totalPhotons The total number of generated photons in the simulation
  */
+
 void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
 
     printf("Small Monte Carlo by Scott Prahl (https://omlc.org)\n");
