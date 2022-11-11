@@ -1,5 +1,5 @@
 /*
- * small_mc.cu
+ * main.cu
  *
  * This file contains the code for our final project, designed to simulate light propagation through
  * a medium using Monte Carlo methods.
@@ -54,8 +54,10 @@
 
 #define SEED 1
 
+// The total number of photons that can be generated on one gpu
 #define MAXPHOTONS 6144
 
+// The maximum number of threads that can be used in a kernel
 #define THREADS 1024
 
 /**
@@ -92,9 +94,12 @@ typedef struct {
 float host_time(struct timespec* start, struct timespec* end);
 
 /**
- * @brief
- * @param
+ * @brief Code given to us to handle CUDA errors 
+ * @param err A cuda error to handle
+ * @param file A pointer to the current file
+ * @param line The line which the error occurred
  */
+
 static void HandleError(cudaError_t err, const char *file, int line);
 
 /**
@@ -116,6 +121,7 @@ __device__ void bounce(Photon* photon, double* rd);
  * @brief This function simulates the movement to next scattering or absorption event
  * @param photon A pointer to the Photon to simulate.
  * @param rd A statistic used in simulation
+ * @param state The status of the cuRand function for random number generation  
  */
 __device__ void move(Photon* photon, double* rd, curandState* state);
 
@@ -124,12 +130,14 @@ __device__ void move(Photon* photon, double* rd, curandState* state);
  * @param photon A pointer to the Photon to simulate.
  * @param bit A statistic used to calculate the results
  * @param heat An array of statistics used to calculate the results
+ * @param state The status of the cuRand function for random number generation  
  */
 __device__ void absorb(Photon* photon, double* bit, double heat[], curandState* state);
 
 /**
  * @brief This function simulates the scattering of a photon and establish a new direction
  * @param photon A pointer to the Photon to initialize.
+ * @param state The status of the cuRand function for random number generation  
  */
 __device__ void scatter(Photon* photon,  curandState* state);
 
@@ -140,172 +148,59 @@ __device__ void scatter(Photon* photon,  curandState* state);
  * @param heat An array of statistics used to calculate the results
  * @param totalPhotons The total number of generated photons in the simulation
  */
+
 void print_results(double* rd, double* bit, double heat[], long totalPhotons);
 
-__global__ void init_random(curandState* state);
+/**
+ * @brief A helper method to generate random numbers between 0 and MAX_RAND
+ * @param state The status of the cuRand function for random number generation  
+ */
 
 __device__ int random(curandState* state);
 
-
-
-//gpu kernel for multiplying A and B to C using tiling
-__global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, int photons) {
-    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
-
-    double rd = 0.0;
-    double bit = 0.0;
-    double heat[BINS] = {0};
-
-    Photon photon;
-
-    curandState state;
-    curand_init(SEED, i, 0, &state);
-
-    initialize_photon(&photon);
-
-    while(photon.weight > 0) {
-        move(&photon, &rd, &state);
-        absorb(&photon, &bit, heat, &state);
-        scatter(&photon, &state);
-    }
-
-    if (i<photons) {
-        d_rd[i] += rd;
-        d_bit[i] += bit;
-        for (int bin = 0; bin < BINS; bin++) {
-            d_heat[bin*photons+i] = heat[bin];
-        }
-    }
-
-}
-
-/*
+/**
+ * @brief Kernel for generating movement with photons 
  *   This version uses n/2 threads --
  *   it performs the first level of reduction when reading from global memory.
+ *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
+ * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
+ * @param photons The number of photons being simulated 
  */
-__global__ void reduceKernel(double* data, int n) {
-    extern __shared__ double ds[];
 
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
+__global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, int photons);
 
-    double sum;
-    if (i < n) {
-        sum = data[i];
-    } else {
-        sum = 0;
-    }
+/**
+ * @brief Kernel for reducing all elements in data into grid number of elements
+ * @param data A pointer to an array in global memory 
+ * @param n The number of elements in the data array
+ */
 
+__global__ void reduceKernel(double* data, int n);
 
-    if (i + blockDim.x < n) {
-        sum += data[i + blockDim.x];
-    }
+/**
+ * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first memory location
+ * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
+ * @param offset The starting location in memory for the reduction to take place
+ * @param photons The number of photons being simulated 
+ * @param totalPhotons The number of photons stored in each array
+ */
 
-    ds[tid] = sum;
+void reducer(double* d_rd, double* d_bit, double d_heat[], long offset, long photons, long totalPhotons);
 
-    __syncthreads();
+/**
+ * @brief Method for starting the simulation and combining the outputs
+ * @param h_rd A pointer to an array in host memory. Is a statistic used to calculate the results
+ * @param h_bit A pointer to an array in host memory. Is a statistic used to calculate the results
+ * @param h_heat A pointer to a 2d array in host memory. Is used to calculate the results
+ * @param totalPhotons The number of photons being simulated 
+ */
 
-    // do reduction in shared mem
+void gpu_simulation(double* h_rd, double* h_bit, double h_heat[], long totalPhotons);
 
-    
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            sum += ds[tid + s];
-            ds[tid] = sum;
-        }
-
-        __syncthreads();
-    }
-
-    // write result for this block to global mem
-    if (tid == 0) {
-    //    printf("\n%d : %f\n", blockIdx.x, sum);
-        data[blockIdx.x] = sum;
-    }
-
-    __syncthreads();
-}
-
-__global__ void shiftKernel(double* target, double* data) {
-    printf("\n%f <- %f\n", target[0], data[0]);
-    target[0] = data[0];
-    printf("\n%f <- %f\n", target[0], data[0]);
-}
-
-void reducer(double* d_rd, double* d_bit, double d_heat[], long offset, long photons, long totalPhotons) {
-    int grid = ceil(photons/(THREADS * 1.0)); 
-    reduceKernel<<<grid, THREADS,
-        (sizeof(double)*MAXPHOTONS)>>>(&d_rd[offset], photons);
-    HANDLE_ERROR(cudaGetLastError());
-
-    reduceKernel<<<grid, THREADS,
-        (sizeof(double)*MAXPHOTONS)>>>(&d_bit[offset], photons);
-    HANDLE_ERROR(cudaGetLastError());
-
-    for (int bin = 0; bin < BINS; bin++) {
-        reduceKernel<<<grid, THREADS,
-            (sizeof(double)*MAXPHOTONS)>>>(&d_heat[bin*totalPhotons+offset], photons);
-        HANDLE_ERROR(cudaGetLastError());
-    }
-    if (grid > 1) {
-        reducer(d_rd, d_bit, d_heat, offset, grid, totalPhotons);
-    }
-}
-
-//wrapper of gpu kernel
-//used to copy data from host to gpu
-void gpu_simulation(double* h_rd, double* h_bit, double h_heat[], long totalPhotons) {
-    double rd = 0.0;
-    double bit = 0.0;
-    double heat[BINS] = {0};
-
-    cudaDeviceProp prop;
-    HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
-
-    double* d_rd;
-    double* d_bit;
-    double* d_heat;
-
-
-    HANDLE_ERROR(cudaMalloc((void**)&d_rd, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMalloc((void**)&d_bit, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMalloc((void**)&d_heat, sizeof(double)*totalPhotons*BINS));
-
-    HANDLE_ERROR(cudaMemset(d_rd, 0, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMemset(d_bit, 0, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMemset(d_heat, 0, sizeof(double)*totalPhotons*BINS));
-
-    simulationKernel<<<ceil(totalPhotons/512.0), 512>>>(d_rd, d_bit, d_heat, totalPhotons);
-    HANDLE_ERROR(cudaGetLastError());
-
-    int photons = totalPhotons;
-    while (photons > MAXPHOTONS) {
-        photons -= MAXPHOTONS;
-        reducer(d_rd, d_bit, d_heat, photons, MAXPHOTONS, totalPhotons);
-        photons++;
-    }
-    reducer(d_rd, d_bit, d_heat, 0, photons, totalPhotons);
-
-
-    HANDLE_ERROR(cudaMemcpy(&rd, d_rd, sizeof(double), cudaMemcpyDeviceToHost));
-    HANDLE_ERROR(cudaMemcpy(&bit, d_bit, sizeof(double), cudaMemcpyDeviceToHost));
-    for (int bin = 0; bin < BINS; bin++) {
-        HANDLE_ERROR(cudaMemcpy(&heat[bin], &d_heat[bin*totalPhotons], sizeof(double), cudaMemcpyDeviceToHost));
-    }
-
-    HANDLE_ERROR(cudaFree(d_rd));
-    HANDLE_ERROR(cudaFree(d_bit));
-    HANDLE_ERROR(cudaFree(d_heat));
-
-    *h_rd += rd;
-    *h_bit += bit;
-    for (int bin = 0; bin < BINS; bin++) {
-        h_heat[bin] += heat[bin];
-    }
-
-
-
-}
 
 int main(int argc, char* argv[]) {
     double rd = 0.0;
@@ -348,8 +243,12 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+/**
+ * @brief A helper method to generate random numbers between 0 and MAX_RAND
+ * @param state The status of the cuRand function for random number generation  
+ */
+
 __device__ int random(curandState* state) {
-    //+1
     return (int) (curand_uniform(state) * (RAND_MAX));
 }
 
@@ -365,7 +264,13 @@ float host_time(struct timespec* start, struct timespec* end) {
     return ((1e9 * end->tv_sec + end->tv_nsec) - (1e9 * start->tv_sec + start->tv_nsec)) / 1e6;
 }
 
-//handle error macro
+/**
+ * @brief Code given to us to handle CUDA errors 
+ * @param err A cuda error to handle
+ * @param file A pointer to the current file
+ * @param line The line which the error occurred
+ */
+
 static void HandleError(cudaError_t err, const char *file, int line) {
   if (err != cudaSuccess) {
     printf("%s in %s at line %d\n", cudaGetErrorString(err), file, line);
@@ -421,6 +326,7 @@ __device__ void bounce(Photon* photon, double* rd) {
  * @brief This function simulates the movement to next scattering or absorption event
  * @param photon A pointer to the Photon to simulate.
  * @param rd A statistic used in simulation
+ * @param state The status of the cuRand function for random number generation  
  */
 
 __device__ void move(Photon* photon, double* rd, curandState* state) {
@@ -445,6 +351,7 @@ __device__ void move(Photon* photon, double* rd, curandState* state) {
  * @param photon A pointer to the Photon to simulate.
  * @param bit A statistic used to calculate the results
  * @param heat An array of statistics used to calculate the results
+ * @param state The status of the cuRand function for random number generation  
  */
 
 __device__ void absorb (Photon* photon, double* bit, double heat[], curandState* state) {
@@ -474,6 +381,7 @@ __device__ void absorb (Photon* photon, double* bit, double heat[], curandState*
 /**
  * @brief This function simulates the scattering of a photon and establish a new direction
  * @param photon A pointer to the Photon to initialize.
+ * @param state The status of the cuRand function for random number generation  
  */
 
 __device__ void scatter(Photon* photon, curandState* state) {
@@ -576,4 +484,183 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
     }
 
     printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / ((*bit) + totalPhotons));
+}
+
+/**
+ * @brief Kernel for generating movement with photons 
+ *   This version uses n/2 threads --
+ *   it performs the first level of reduction when reading from global memory.
+ *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
+ * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
+ * @param photons The number of photons being simulated 
+ */
+
+__global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, int photons) {
+    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+    double rd = 0.0;
+    double bit = 0.0;
+    double heat[BINS] = {0};
+
+    Photon photon;
+
+    curandState state;
+    curand_init(SEED, i, 0, &state);
+
+    initialize_photon(&photon);
+
+    while(photon.weight > 0) {
+        move(&photon, &rd, &state);
+        absorb(&photon, &bit, heat, &state);
+        scatter(&photon, &state);
+    }
+
+    if (i<photons) {
+        d_rd[i] += rd;
+        d_bit[i] += bit;
+        for (int bin = 0; bin < BINS; bin++) {
+            d_heat[bin*photons+i] = heat[bin];
+        }
+    }
+
+}
+
+/**
+ * @brief Kernel for reducing all elements in data into grid number of elements
+ * @param data A pointer to an array in global memory 
+ * @param n The number of elements in the data array
+ */
+
+__global__ void reduceKernel(double* data, int n) {
+    extern __shared__ double ds[];
+
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
+
+    double sum;
+    if (i < n) {
+        sum = data[i];
+    } else {
+        sum = 0;
+    }
+
+
+    if (i + blockDim.x < n) {
+        sum += data[i + blockDim.x];
+    }
+
+    ds[tid] = sum;
+
+    __syncthreads();
+
+    // do reduction in shared mem
+
+    
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sum += ds[tid + s];
+            ds[tid] = sum;
+        }
+
+        __syncthreads();
+    }
+
+    // write result for this block to global mem
+    if (tid == 0) {
+    //    printf("\n%d : %f\n", blockIdx.x, sum);
+        data[blockIdx.x] = sum;
+    }
+
+    __syncthreads();
+}
+
+/**
+ * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first memory location
+ * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
+ * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
+ * @param offset The starting location in memory for the reduction to take place
+ * @param photons The number of photons being simulated 
+ * @param totalPhotons The number of photons stored in each array
+ */
+
+void reducer(double* d_rd, double* d_bit, double d_heat[], long offset, long photons, long totalPhotons) {
+    int grid = ceil(photons/(THREADS * 1.0)); 
+    reduceKernel<<<grid, THREADS,
+        (sizeof(double)*MAXPHOTONS)>>>(&d_rd[offset], photons);
+    HANDLE_ERROR(cudaGetLastError());
+
+    reduceKernel<<<grid, THREADS,
+        (sizeof(double)*MAXPHOTONS)>>>(&d_bit[offset], photons);
+    HANDLE_ERROR(cudaGetLastError());
+
+    for (int bin = 0; bin < BINS; bin++) {
+        reduceKernel<<<grid, THREADS,
+            (sizeof(double)*MAXPHOTONS)>>>(&d_heat[bin*totalPhotons+offset], photons);
+        HANDLE_ERROR(cudaGetLastError());
+    }
+    if (grid > 1) {
+        reducer(d_rd, d_bit, d_heat, offset, grid, totalPhotons);
+    }
+}
+
+/**
+ * @brief Method for starting the simulation and combining the outputs
+ * @param h_rd A pointer to an array in host memory. Is a statistic used to calculate the results
+ * @param h_bit A pointer to an array in host memory. Is a statistic used to calculate the results
+ * @param h_heat A pointer to a 2d array in host memory. Is used to calculate the results
+ * @param totalPhotons The number of photons being simulated 
+ */
+
+void gpu_simulation(double* h_rd, double* h_bit, double h_heat[], long totalPhotons) {
+    double rd = 0.0;
+    double bit = 0.0;
+    double heat[BINS] = {0};
+
+    cudaDeviceProp prop;
+    HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
+
+    double* d_rd;
+    double* d_bit;
+    double* d_heat;
+
+
+    HANDLE_ERROR(cudaMalloc((void**)&d_rd, sizeof(double)*totalPhotons));
+    HANDLE_ERROR(cudaMalloc((void**)&d_bit, sizeof(double)*totalPhotons));
+    HANDLE_ERROR(cudaMalloc((void**)&d_heat, sizeof(double)*totalPhotons*BINS));
+
+    HANDLE_ERROR(cudaMemset(d_rd, 0, sizeof(double)*totalPhotons));
+    HANDLE_ERROR(cudaMemset(d_bit, 0, sizeof(double)*totalPhotons));
+    HANDLE_ERROR(cudaMemset(d_heat, 0, sizeof(double)*totalPhotons*BINS));
+
+    simulationKernel<<<ceil(totalPhotons/512.0), 512>>>(d_rd, d_bit, d_heat, totalPhotons);
+    HANDLE_ERROR(cudaGetLastError());
+
+    int photons = totalPhotons;
+    while (photons > MAXPHOTONS) {
+        photons -= MAXPHOTONS;
+        reducer(d_rd, d_bit, d_heat, photons, MAXPHOTONS, totalPhotons);
+        photons++;
+    }
+    reducer(d_rd, d_bit, d_heat, 0, photons, totalPhotons);
+
+
+    HANDLE_ERROR(cudaMemcpy(&rd, d_rd, sizeof(double), cudaMemcpyDeviceToHost));
+    HANDLE_ERROR(cudaMemcpy(&bit, d_bit, sizeof(double), cudaMemcpyDeviceToHost));
+    for (int bin = 0; bin < BINS; bin++) {
+        HANDLE_ERROR(cudaMemcpy(&heat[bin], &d_heat[bin*totalPhotons], sizeof(double), cudaMemcpyDeviceToHost));
+    }
+
+    HANDLE_ERROR(cudaFree(d_rd));
+    HANDLE_ERROR(cudaFree(d_bit));
+    HANDLE_ERROR(cudaFree(d_heat));
+
+    *h_rd += rd;
+    *h_bit += bit;
+    for (int bin = 0; bin < BINS; bin++) {
+        h_heat[bin] += heat[bin];
+    }
+
 }
