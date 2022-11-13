@@ -17,7 +17,8 @@
 #include <errno.h>
 #include <time.h>
 #include <curand_kernel.h>
-#define HANDLE_ERROR(err) (HandleError( err, __FILE__, __LINE__ ))
+
+#define HANDLE_ERROR(err) (HandleError(err, __FILE__, __LINE__))
 
 // Absorption Coefficient in 1/cm
 #define MU_A 5.0
@@ -40,16 +41,13 @@
 // Specular reflection
 #define RS ((N - 1.0) * (N - 1.0) / (N + 1.0) / (N + 1.0))
 
-// TODO: Figure out what this means
 #define ALBEDO (MU_S / (MU_S + MU_A))
 
 // Cosine of critical angle
 #define CRITICAL_ANGLE (sqrt(1.0 - 1.0 / N / N))
 
-// TODO: Figure out what this means
 #define BINS_PER_MFP (1e4 / MICRONS_PER_BIN / (MU_A + MU_S))
 
-// TODO: Figure out what this means
 #define BINS 101
 
 #define SEED 1
@@ -154,6 +152,7 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons);
 /**
  * @brief A helper method to generate random numbers between 0 and MAX_RAND
  * @param state The status of the cuRand function for random number generation  
+ * @return A randomly generated number between 0 and MAX_RAND
  */
 
 __device__ int random(curandState* state);
@@ -180,7 +179,8 @@ __global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, in
 __global__ void reduceKernel(double* data, int n);
 
 /**
- * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first memory location
+ * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first 
+ * memory location
  * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
@@ -189,7 +189,12 @@ __global__ void reduceKernel(double* data, int n);
  * @param totalPhotons The number of photons stored in each array
  */
 
-void reducer(double* d_rd, double* d_bit, double d_heat[], long offset, long photons, long totalPhotons);
+void reducer(double* d_rd, 
+             double* d_bit, 
+             double d_heat[], 
+             long offset, 
+             long photons, 
+             long totalPhotons);
 
 /**
  * @brief Method for starting the simulation and combining the outputs
@@ -211,7 +216,6 @@ int main(int argc, char* argv[]) {
     struct timespec ts;
     struct timespec te;
 
-
     errno = 0;
     char *p;
 
@@ -228,11 +232,14 @@ int main(int argc, char* argv[]) {
     }
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
     int photons = totalPhotons;
+
     while (photons > 10000000) {
         photons -= 10000000;
         gpu_simulation(&rd, &bit, heat, 10000000);
     }
+
     gpu_simulation(&rd, &bit, heat, photons);
     clock_gettime(CLOCK_MONOTONIC_RAW, &te);
 
@@ -479,8 +486,9 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
     printf("Depth         Heat\n[microns]     [W/cm^3]\n");
 
     for (int i = 0; i < BINS - 1; i++) {
-        printf("%6.0f    %12.5f\n", i * MICRONS_PER_BIN, heat[i] / MICRONS_PER_BIN * 1e4 / ((*bit) +
-                                                                                            totalPhotons));
+        printf("%6.0f    %12.5f\n", 
+               i * MICRONS_PER_BIN, 
+               heat[i] / MICRONS_PER_BIN * 1e4 / ((*bit) + totalPhotons));
     }
 
     printf("Extra Heat [W/cm^3]  %12.5f\n", heat[BINS - 1] / ((*bit) + totalPhotons));
@@ -498,7 +506,7 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
  */
 
 __global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, int photons) {
-    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     double rd = 0.0;
     double bit = 0.0;
@@ -521,7 +529,7 @@ __global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, in
         d_rd[i] += rd;
         d_bit[i] += bit;
         for (int bin = 0; bin < BINS; bin++) {
-            d_heat[bin*photons+i] = heat[bin];
+            d_heat[bin * photons + i] = heat[bin];
         }
     }
 
@@ -539,25 +547,15 @@ __global__ void reduceKernel(double* data, int n) {
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
 
-    double sum;
-    if (i < n) {
-        sum = data[i];
-    } else {
-        sum = 0;
-    }
+    double sum = i < n ? data[i] : 0;
 
-
-    if (i + blockDim.x < n) {
-        sum += data[i + blockDim.x];
-    }
+    sum += i + blockDim.x < n ? data[i + blockDim.x] : 0;
 
     ds[tid] = sum;
 
     __syncthreads();
 
     // do reduction in shared mem
-
-    
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             sum += ds[tid + s];
@@ -569,7 +567,6 @@ __global__ void reduceKernel(double* data, int n) {
 
     // write result for this block to global mem
     if (tid == 0) {
-    //    printf("\n%d : %f\n", blockIdx.x, sum);
         data[blockIdx.x] = sum;
     }
 
@@ -577,7 +574,8 @@ __global__ void reduceKernel(double* data, int n) {
 }
 
 /**
- * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first memory location
+ * @brief Calls the reduceKernel for d_rd, d_bit, and d_heat until one value is stored in the first 
+ * memory location
  * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
@@ -586,22 +584,31 @@ __global__ void reduceKernel(double* data, int n) {
  * @param totalPhotons The number of photons stored in each array
  */
 
-void reducer(double* d_rd, double* d_bit, double d_heat[], long offset, long photons, long totalPhotons) {
-    int grid = ceil(photons/(THREADS * 1.0)); 
+void reducer(double* d_rd, 
+             double* d_bit, 
+             double d_heat[], 
+             long offset, 
+             long photons, 
+             long totalPhotons) {
+    int grid = ceil(photons / (double) THREADS); 
+
     reduceKernel<<<grid, THREADS,
-        (sizeof(double)*MAXPHOTONS)>>>(&d_rd[offset], photons);
+        (sizeof(double) * MAXPHOTONS)>>>(&d_rd[offset], photons);
     HANDLE_ERROR(cudaGetLastError());
 
     reduceKernel<<<grid, THREADS,
-        (sizeof(double)*MAXPHOTONS)>>>(&d_bit[offset], photons);
+        (sizeof(double) * MAXPHOTONS)>>>(&d_bit[offset], photons);
     HANDLE_ERROR(cudaGetLastError());
 
-    for (int bin = 0; bin < BINS; bin++) {
+    // This for loop reduces the heat generated at each depth bin
+    for(int bin = 0; bin < BINS; bin++) {
         reduceKernel<<<grid, THREADS,
-            (sizeof(double)*MAXPHOTONS)>>>(&d_heat[bin*totalPhotons+offset], photons);
+            (sizeof(double) * MAXPHOTONS)>>>(&d_heat[bin * totalPhotons + offset], photons);
         HANDLE_ERROR(cudaGetLastError());
     }
-    if (grid > 1) {
+
+    // This conditional recursively calls reducer until all photons have been reduced
+    if(grid > 1) {
         reducer(d_rd, d_bit, d_heat, offset, grid, totalPhotons);
     }
 }
@@ -627,30 +634,38 @@ void gpu_simulation(double* h_rd, double* h_bit, double h_heat[], long totalPhot
     double* d_heat;
 
 
-    HANDLE_ERROR(cudaMalloc((void**)&d_rd, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMalloc((void**)&d_bit, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMalloc((void**)&d_heat, sizeof(double)*totalPhotons*BINS));
+    HANDLE_ERROR(cudaMalloc((void**) &d_rd, sizeof(double) * totalPhotons));
+    HANDLE_ERROR(cudaMalloc((void**) &d_bit, sizeof(double) * totalPhotons));
+    HANDLE_ERROR(cudaMalloc((void**) &d_heat, sizeof(double) * totalPhotons * BINS));
 
-    HANDLE_ERROR(cudaMemset(d_rd, 0, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMemset(d_bit, 0, sizeof(double)*totalPhotons));
-    HANDLE_ERROR(cudaMemset(d_heat, 0, sizeof(double)*totalPhotons*BINS));
+    HANDLE_ERROR(cudaMemset(d_rd, 0, sizeof(double) * totalPhotons));
+    HANDLE_ERROR(cudaMemset(d_bit, 0, sizeof(double) * totalPhotons));
+    HANDLE_ERROR(cudaMemset(d_heat, 0, sizeof(double) * totalPhotons * BINS));
 
-    simulationKernel<<<ceil(totalPhotons/512.0), 512>>>(d_rd, d_bit, d_heat, totalPhotons);
+    simulationKernel<<<ceil(totalPhotons / 512.0), 512>>>(d_rd, d_bit, d_heat, totalPhotons);
     HANDLE_ERROR(cudaGetLastError());
 
     int photons = totalPhotons;
-    while (photons > MAXPHOTONS) {
+
+    // This while loop reduces in chunks of MAXPHOTONS until less than the maximum remain
+    while(photons > MAXPHOTONS) {
         photons -= MAXPHOTONS;
         reducer(d_rd, d_bit, d_heat, photons, MAXPHOTONS, totalPhotons);
         photons++;
     }
+
     reducer(d_rd, d_bit, d_heat, 0, photons, totalPhotons);
 
 
     HANDLE_ERROR(cudaMemcpy(&rd, d_rd, sizeof(double), cudaMemcpyDeviceToHost));
     HANDLE_ERROR(cudaMemcpy(&bit, d_bit, sizeof(double), cudaMemcpyDeviceToHost));
-    for (int bin = 0; bin < BINS; bin++) {
-        HANDLE_ERROR(cudaMemcpy(&heat[bin], &d_heat[bin*totalPhotons], sizeof(double), cudaMemcpyDeviceToHost));
+
+    // This for loop copies the device heat bins back to the host
+    for(int bin = 0; bin < BINS; bin++) {
+        HANDLE_ERROR(cudaMemcpy(&heat[bin], 
+                                &d_heat[bin * totalPhotons], 
+                                sizeof(double), 
+                                cudaMemcpyDeviceToHost));
     }
 
     HANDLE_ERROR(cudaFree(d_rd));
@@ -659,7 +674,8 @@ void gpu_simulation(double* h_rd, double* h_bit, double h_heat[], long totalPhot
 
     *h_rd += rd;
     *h_bit += bit;
-    for (int bin = 0; bin < BINS; bin++) {
+
+    for(int bin = 0; bin < BINS; bin++) {
         h_heat[bin] += heat[bin];
     }
 
