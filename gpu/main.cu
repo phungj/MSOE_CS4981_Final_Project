@@ -159,9 +159,6 @@ __device__ int random(curandState* state);
 
 /**
  * @brief Kernel for generating movement with photons 
- *   This version uses n/2 threads --
- *   it performs the first level of reduction when reading from global memory.
- *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
  * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
@@ -172,6 +169,9 @@ __global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, in
 
 /**
  * @brief Kernel for reducing all elements in data into grid number of elements
+ *   This version uses n/2 threads --
+ *   it performs the first level of reduction when reading from global memory.
+ *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
  * @param data A pointer to an array in global memory 
  * @param n The number of elements in the data array
  */
@@ -496,9 +496,6 @@ void print_results(double* rd, double* bit, double heat[], long totalPhotons) {
 
 /**
  * @brief Kernel for generating movement with photons 
- *   This version uses n/2 threads --
- *   it performs the first level of reduction when reading from global memory.
- *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
  * @param d_rd A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_bit A pointer to an array in global memory. Is a statistic used to calculate the results
  * @param d_heat A pointer to a 2d array in global memory. Is used to calculate the results
@@ -537,6 +534,9 @@ __global__ void simulationKernel(double* d_rd, double* d_bit, double* d_heat, in
 
 /**
  * @brief Kernel for reducing all elements in data into grid number of elements
+ *   This version uses n/2 threads --
+ *   it performs the first level of reduction when reading from global memory.
+ *   Heavily inspired by reduce3 - https://github.com/NVIDIA/cuda-samples/blob/master/Samples/2_Concepts_and_Techniques/reduction/reduction_kernel.cu
  * @param data A pointer to an array in global memory 
  * @param n The number of elements in the data array
  */
